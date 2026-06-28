@@ -73,14 +73,62 @@ def generate_email(lead: dict, research_summary: str) -> dict:
         }
 
 
+def _find_thread(to: str):
+    """Search Sent folder for the last email to this exact recipient. Returns (Message-ID, Subject) or (None, None)."""
+    try:
+        mail = imaplib.IMAP4_SSL(IMAP_SERVER)
+        mail.login(SMTP_USER, SMTP_PASSWORD)
+        mail.select('"[Gmail]/Sent Mail"')
+
+        status, messages = mail.search(None, f'(TO "{to}")')
+        if status != "OK" or not messages[0]:
+            mail.logout()
+            return None, None
+
+        # Check from newest to oldest, verify exact To match
+        msg_ids = messages[0].split()
+        for msg_id in reversed(msg_ids):
+            status, msg_data = mail.fetch(msg_id, "(RFC822)")
+            if status != "OK":
+                continue
+
+            msg = email.message_from_bytes(msg_data[0][1])
+            to_header = (msg["To"] or "").lower()
+
+            # Exact match -- Gmail search ignores +aliases so we must verify
+            if to.lower() in to_header:
+                mail.logout()
+                return msg["Message-ID"], msg["Subject"] or ""
+
+        mail.logout()
+        return None, None
+
+    except Exception:
+        return None, None
+
+
 def send_email(to: str, subject: str, body: str) -> bool:
     print(f"[EMAIL] Sending to {to}...")
 
     try:
+        # Check for existing thread to reply in
+        thread_msg_id, thread_subject = _find_thread(to)
+
         msg = MIMEMultipart()
         msg["From"] = SMTP_USER
         msg["To"] = to
-        msg["Subject"] = subject
+
+        if thread_msg_id:
+            # Reply in existing thread
+            msg["In-Reply-To"] = thread_msg_id
+            msg["References"] = thread_msg_id
+            # Use original subject with Re: prefix
+            clean_subject = thread_subject.replace("Re: ", "")
+            msg["Subject"] = f"Re: {clean_subject}"
+            print(f"[EMAIL] Replying in thread: {msg['Subject']}")
+        else:
+            msg["Subject"] = subject
+
         msg.attach(MIMEText(body, "plain"))
 
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
@@ -97,7 +145,6 @@ def send_email(to: str, subject: str, body: str) -> bool:
 
 
 def check_replies(leads: list) -> list:
-    lead_emails = {lead["email"].strip().lower() for lead in leads}
     replies = []
 
     print("[EMAIL] Checking inbox for replies...")
@@ -105,47 +152,62 @@ def check_replies(leads: list) -> list:
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(SMTP_USER, SMTP_PASSWORD)
-        mail.select("INBOX")
 
-        status, messages = mail.search(None, "UNSEEN")
-        if status != "OK" or not messages[0]:
-            print("[EMAIL] No new replies")
-            mail.logout()
-            return replies
+        from datetime import datetime, timedelta
+        since_date = (datetime.now() - timedelta(days=2)).strftime("%d-%b-%Y")
 
-        for msg_id in messages[0].split():
-            status, msg_data = mail.fetch(msg_id, "(RFC822)")
-            if status != "OK":
+        for lead in leads:
+            lead_email = lead["email"].strip().lower()
+
+            # Find the subject of the email WE sent to this exact lead
+            original_msg_id, original_subject = _find_thread(lead_email)
+            if not original_subject:
                 continue
 
-            msg = email.message_from_bytes(msg_data[0][1])
+            # Strip "Re: " prefixes for matching
+            clean_subject = original_subject.replace("Re: ", "").strip()
 
-            # Extract sender email
-            from_header = msg["From"]
-            sender = email.utils.parseaddr(from_header)[1].lower()
+            # Search inbox for replies with this subject
+            mail.select("INBOX")
+            search_criteria = f'(SUBJECT "{clean_subject}" SINCE {since_date})'
+            status, messages = mail.search(None, search_criteria)
 
-            if sender not in lead_emails:
+            if status != "OK" or not messages[0]:
                 continue
 
-            # Extract body
-            body_text = ""
-            if msg.is_multipart():
-                for part in msg.walk():
-                    if part.get_content_type() == "text/plain":
-                        body_text = part.get_payload(decode=True).decode("utf-8", errors="ignore")
-                        break
-            else:
-                body_text = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
+            for msg_id in messages[0].split():
+                status, msg_data = mail.fetch(msg_id, "(RFC822)")
+                if status != "OK":
+                    continue
 
-            replies.append({
-                "sender": sender,
-                "subject": msg["Subject"] or "",
-                "body": body_text.strip(),
-            })
+                msg = email.message_from_bytes(msg_data[0][1])
 
-            # Mark as read
-            mail.store(msg_id, "+FLAGS", "\\Seen")
-            print(f"[EMAIL] Reply from {sender}: {msg['Subject']}")
+                # Skip emails we sent ourselves
+                from_header = msg["From"]
+                sender = email.utils.parseaddr(from_header)[1].lower()
+                if sender == SMTP_USER.lower():
+                    continue
+
+                # Extract body
+                body_text = ""
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        if part.get_content_type() == "text/plain":
+                            body_text = part.get_payload(decode=True).decode("utf-8", errors="ignore")
+                            break
+                else:
+                    body_text = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
+
+                if not body_text.strip():
+                    continue
+
+                replies.append({
+                    "sender": sender,
+                    "subject": msg["Subject"] or "",
+                    "body": body_text.strip(),
+                })
+
+                print(f"[EMAIL] Reply from {sender}: {msg['Subject']}")
 
         mail.logout()
 
