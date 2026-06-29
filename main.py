@@ -205,4 +205,24 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import time
+    from datetime import datetime, timedelta
+
+    INTERVAL = 15 * 60  # 15 minutes
+
+    cycle = 1
+    try:
+        while True:
+            print(f"\n{'#' * 60}")
+            print(f"  CYCLE {cycle} — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"{'#' * 60}")
+
+            main()
+
+            cycle += 1
+            next_run = datetime.now() + timedelta(seconds=INTERVAL)
+            print(f"\n[LOOP] Next cycle at {next_run.strftime('%H:%M:%S')} (15 min). Press Ctrl+C to stop.")
+            time.sleep(INTERVAL)
+
+    except KeyboardInterrupt:
+        print(f"\n\n[LOOP] Stopped after {cycle - 1} cycle(s). Goodbye!")
