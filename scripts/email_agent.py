@@ -23,7 +23,7 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 IMAP_SERVER = "imap.gmail.com"
 SENDER_NAME = os.getenv("SENDER_NAME", "Alex")
-COMPANY_NAME = os.getenv("COMPANY_NAME", "SalesHermes")
+COMPANY_NAME = os.getenv("COMPANY_NAME", "Autocloser")
 
 
 def generate_email(lead: dict, research_summary: str) -> dict:

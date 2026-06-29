@@ -9,7 +9,7 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
 
 SENDER_NAME = os.getenv("SENDER_NAME", "Alex")
-COMPANY_NAME = os.getenv("COMPANY_NAME", "SalesHermes")
+COMPANY_NAME = os.getenv("COMPANY_NAME", "Autocloser")
 
 
 def create_invoice(lead: dict, amount: int, description: str) -> str:
