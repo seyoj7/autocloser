@@ -81,13 +81,16 @@ def qualify_lead(lead: dict, reply_analysis: str) -> bool:
     return qualified
 
 
+SENDER_NAME = os.getenv("SENDER_NAME", "Alex")
+
+
 def schedule_meeting(lead: dict) -> str:
     message = (
         f"Hi {lead['contact']},\n\n"
         f"Thanks for your interest! I'd love to set up a quick 15-minute call.\n\n"
         f"Pick a time that works for you: {CALENDLY_LINK}\n\n"
         f"Looking forward to it!\n"
-        f"Alex"
+        f"{SENDER_NAME}"
     )
 
     subject = "Let's connect -- 15 min call"

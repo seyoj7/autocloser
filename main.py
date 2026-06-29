@@ -10,6 +10,32 @@ from skills import scheduler
 from skills import billing
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "leads.csv")
+SERVICES_PATH = os.path.join(os.path.dirname(__file__), "data", "services.csv")
+
+
+def _pick_and_invoice(lead: dict) -> bool:
+    """Show service menu, let user pick, then create invoice. Returns True if sent."""
+    services = csv_reader.load_services(SERVICES_PATH)
+
+    if not services:
+        print("[MAIN] No services found. Add your services to data/services.csv first.")
+        return False
+
+    print(f"\n  Available services:")
+    for s in services:
+        print(f"    [{s['id']}] {s['name']:25s}  ${s['amount_cents'] / 100:.2f}  —  {s['description']}")
+
+    choice = input(f"  Select service ID to invoice [default=2]: ").strip() or "2"
+    service = next((s for s in services if s["id"] == choice), services[0])
+    invoice_url = billing.create_invoice(lead, service["amount_cents"], service["description"])
+
+    if invoice_url:
+        csv_reader.mark_lead_status(DATA_PATH, lead["email"], "invoiced")
+        print(f"[MAIN] Invoice sent: {invoice_url}")
+        return True
+    else:
+        print(f"[MAIN] Invoice creation skipped (no Stripe key?)")
+        return False
 
 
 def main():
@@ -121,12 +147,7 @@ def main():
 
                 send_invoice = input(f"  Create & send Stripe invoice to {lead['contact']}? (y/n): ").strip().lower()
                 if send_invoice == "y":
-                    invoice_url = billing.create_invoice(lead, 2000, "15-min consulting call")
-                    if invoice_url:
-                        csv_reader.mark_lead_status(DATA_PATH, lead["email"], "invoiced")
-                        print(f"[MAIN] Invoice sent: {invoice_url}")
-                    else:
-                        print(f"[MAIN] Invoice creation skipped (no Stripe key?)")
+                    _pick_and_invoice(lead)
                 else:
                     print(f"[MAIN] Skipping invoice for {lead['company']}. Will ask again next cycle.")
             else:
@@ -136,12 +157,7 @@ def main():
         elif lead["status"] == "meeting_completed":
             send_invoice = input(f"\n  {lead['contact']} at {lead['company']} — meeting done. Create invoice? (y/n): ").strip().lower()
             if send_invoice == "y":
-                invoice_url = billing.create_invoice(lead, 2000, "15-min consulting call")
-                if invoice_url:
-                    csv_reader.mark_lead_status(DATA_PATH, lead["email"], "invoiced")
-                    print(f"[MAIN] Invoice sent: {invoice_url}")
-                else:
-                    print(f"[MAIN] Invoice creation skipped (no Stripe key?)")
+                _pick_and_invoice(lead)
             else:
                 print(f"[MAIN] Skipping invoice for {lead['company']}. Will ask again next cycle.")
 

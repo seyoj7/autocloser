@@ -8,6 +8,10 @@ load_dotenv()
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
 
+SENDER_NAME = os.getenv("SENDER_NAME", "Alex")
+COMPANY_NAME = os.getenv("COMPANY_NAME", "SalesHermes")
+
+
 def create_invoice(lead: dict, amount: int, description: str) -> str:
     print(f"[BILLING] Creating invoice for {lead['contact']} at {lead['company']}...")
     print(f"  Amount: ${amount / 100:.2f} | {description}")
@@ -53,9 +57,9 @@ def create_invoice(lead: dict, amount: int, description: str) -> str:
             f"Hi {lead['contact']},\n\n"
             f"Thanks for booking a call! Here's your invoice:\n\n"
             f"{invoice_url}\n\n"
-            f"Best,\nAlex"
+            f"Best,\n{SENDER_NAME}"
         )
-        email_agent.send_email(lead["email"], f"Invoice from SalesHermes - {description}", body)
+        email_agent.send_email(lead["email"], f"Invoice from {COMPANY_NAME} - {description}", body)
 
         return invoice_url
 

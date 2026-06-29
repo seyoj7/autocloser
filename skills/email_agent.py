@@ -22,6 +22,8 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 IMAP_SERVER = "imap.gmail.com"
+SENDER_NAME = os.getenv("SENDER_NAME", "Alex")
+COMPANY_NAME = os.getenv("COMPANY_NAME", "SalesHermes")
 
 
 def generate_email(lead: dict, research_summary: str) -> dict:
@@ -36,7 +38,7 @@ def generate_email(lead: dict, research_summary: str) -> dict:
     - Reference something specific about their company from the research
     - End with a soft CTA (suggest a 15-min call)
     - Don't use generic phrases like "I hope this email finds you well"
-    - Sign off as "Alex" from "SalesHermes"
+    - Sign off as "{SENDER_NAME}" from "{COMPANY_NAME}"
 
     Return ONLY a JSON object with "subject" and "body" keys. No markdown, no code fences."""
 
@@ -69,7 +71,7 @@ def generate_email(lead: dict, research_summary: str) -> dict:
         print(f"[EMAIL] Failed to generate email: {e}")
         return {
             "subject": f"Quick question for {lead['contact']}",
-            "body": f"Hi {lead['contact']},\n\nI came across {lead['company']} and would love to chat about how we might help. Do you have 15 minutes this week?\n\nBest,\nAlex"
+            "body": f"Hi {lead['contact']},\n\nI came across {lead['company']} and would love to chat about how we might help. Do you have 15 minutes this week?\n\nBest,\n{SENDER_NAME}"
         }
 
 
@@ -85,7 +87,7 @@ def generate_followup(lead: dict, reply_body: str) -> dict:
     - Keeps it under 120 words
     - Is knowledgeable and confident, not evasive
     - Ends with a soft CTA suggesting a 15-min call to discuss further
-    - Sign off as "Alex" from "SalesHermes"
+    - Sign off as "{SENDER_NAME}" from "{COMPANY_NAME}"
 
     Return ONLY a JSON object with "subject" and "body" keys. No markdown, no code fences."""
 
@@ -117,7 +119,7 @@ def generate_followup(lead: dict, reply_body: str) -> dict:
         print(f"[EMAIL] Failed to generate followup: {e}")
         return {
             "subject": f"Re: Your question about SalesHermes",
-            "body": f"Hi {lead['contact']},\n\nGreat question! I'd love to walk you through the details on a quick 15-minute call — much easier than going back and forth over email.\n\nWould that work for you?\n\nBest,\nAlex"
+            "body": f"Hi {lead['contact']},\n\nGreat question! I'd love to walk you through the details on a quick 15-minute call — much easier than going back and forth over email.\n\nWould that work for you?\n\nBest,\n{SENDER_NAME}"
         }
 
 
