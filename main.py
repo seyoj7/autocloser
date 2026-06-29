@@ -110,13 +110,32 @@ def main():
             else:
                 print(f"[MAIN] No response yet to meeting link from {lead['company']}")
 
-        # meeting_booked -> verify via Calendly if meeting is done
+        # meeting_booked -> ask user if meeting is done, then optionally invoice
         elif lead["status"] == "meeting_booked":
-            print(f"\n--- Meeting Verification ({lead['company']}) ---")
+            print(f"\n--- Meeting Check ({lead['company']}) ---")
+            done = input(f"  Has the meeting with {lead['contact']} at {lead['company']} been completed? (y/n): ").strip().lower()
 
-            if scheduler.check_meeting_completed(lead["email"]):
+            if done == "y":
                 csv_reader.mark_lead_status(DATA_PATH, lead["email"], "meeting_completed")
+                print(f"[MAIN] {lead['company']} marked as meeting_completed")
 
+                send_invoice = input(f"  Create & send Stripe invoice to {lead['contact']}? (y/n): ").strip().lower()
+                if send_invoice == "y":
+                    invoice_url = billing.create_invoice(lead, 2000, "15-min consulting call")
+                    if invoice_url:
+                        csv_reader.mark_lead_status(DATA_PATH, lead["email"], "invoiced")
+                        print(f"[MAIN] Invoice sent: {invoice_url}")
+                    else:
+                        print(f"[MAIN] Invoice creation skipped (no Stripe key?)")
+                else:
+                    print(f"[MAIN] Skipping invoice for {lead['company']}. Will ask again next cycle.")
+            else:
+                print(f"[MAIN] Meeting not yet completed for {lead['company']}. Will check again next cycle.")
+
+        # meeting_completed (fallback if invoice was skipped last time)
+        elif lead["status"] == "meeting_completed":
+            send_invoice = input(f"\n  {lead['contact']} at {lead['company']} — meeting done. Create invoice? (y/n): ").strip().lower()
+            if send_invoice == "y":
                 invoice_url = billing.create_invoice(lead, 2000, "15-min consulting call")
                 if invoice_url:
                     csv_reader.mark_lead_status(DATA_PATH, lead["email"], "invoiced")
@@ -124,18 +143,7 @@ def main():
                 else:
                     print(f"[MAIN] Invoice creation skipped (no Stripe key?)")
             else:
-                print(f"[MAIN] Meeting not yet completed for {lead['company']}. Will check again next cycle.")
-
-        # meeting_completed -> send invoice
-        elif lead["status"] == "meeting_completed":
-            print(f"\n--- Post-Meeting Invoice ({lead['company']}) ---")
-
-            invoice_url = billing.create_invoice(lead, 2000, "15-min consulting call")
-            if invoice_url:
-                csv_reader.mark_lead_status(DATA_PATH, lead["email"], "invoiced")
-                print(f"[MAIN] Invoice sent: {invoice_url}")
-            else:
-                print(f"[MAIN] Invoice creation skipped (no Stripe key?)")
+                print(f"[MAIN] Skipping invoice for {lead['company']}. Will ask again next cycle.")
 
         # invoiced -> check payment
         elif lead["status"] == "invoiced":
