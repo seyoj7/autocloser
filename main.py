@@ -97,28 +97,39 @@ def main():
             else:
                 print(f"[MAIN] No reply yet from {lead['company']}")
 
-        # Step 9: meeting_sent -> check if they replied -> create invoice
+        # meeting_sent -> check if they booked
         elif lead["status"] == "meeting_sent":
-            print(f"\n--- STEP 9: Meeting Follow-up ({lead['company']}) ---")
+            print(f"\n--- Meeting Booking Check ({lead['company']}) ---")
 
-            # Check if they replied to the meeting link
             replies = email_agent.check_replies([lead])
 
             if replies:
                 print(f"[MAIN] {lead['contact']} responded to meeting link")
-                # They engaged -> send invoice
-                invoice_url = billing.create_invoice(lead, 2000, "15-min consulting call")
-                if invoice_url:
-                    csv_reader.mark_lead_status(DATA_PATH, lead["email"], "invoiced")
-                    print(f"[MAIN] Invoice sent: {invoice_url}")
-                else:
-                    print(f"[MAIN] Invoice creation skipped (no Stripe key?)")
+                csv_reader.mark_lead_status(DATA_PATH, lead["email"], "meeting_booked")
+                print(f"[MAIN] {lead['company']} marked as meeting_booked")
             else:
                 print(f"[MAIN] No response yet to meeting link from {lead['company']}")
 
-        # Step 10: invoiced -> check payment
+        # meeting_booked -> waiting for meeting to happen
+        elif lead["status"] == "meeting_booked":
+            print(f"\n--- Awaiting Meeting ({lead['company']}) ---")
+            print(f"[MAIN] {lead['contact']} has booked. Waiting for meeting to complete.")
+            print(f"[MAIN] Mark as 'meeting_completed' in leads.csv after the call.")
+
+        # meeting_completed -> send invoice
+        elif lead["status"] == "meeting_completed":
+            print(f"\n--- Post-Meeting Invoice ({lead['company']}) ---")
+
+            invoice_url = billing.create_invoice(lead, 2000, "15-min consulting call")
+            if invoice_url:
+                csv_reader.mark_lead_status(DATA_PATH, lead["email"], "invoiced")
+                print(f"[MAIN] Invoice sent: {invoice_url}")
+            else:
+                print(f"[MAIN] Invoice creation skipped (no Stripe key?)")
+
+        # invoiced -> check payment
         elif lead["status"] == "invoiced":
-            print(f"\n--- STEP 10: Payment Check ({lead['company']}) ---")
+            print(f"\n--- Payment Check ({lead['company']}) ---")
 
             status = billing.check_payment_status(lead["email"])
             if status == "paid":
