@@ -156,58 +156,68 @@ def check_replies(leads: list) -> list:
         from datetime import datetime, timedelta
         since_date = (datetime.now() - timedelta(days=2)).strftime("%d-%b-%Y")
 
+        # Build a map of lead_email -> clean original subject
+        subject_map = {}
         for lead in leads:
             lead_email = lead["email"].strip().lower()
-
-            # Find the subject of the email WE sent to this exact lead
             original_msg_id, original_subject = _find_thread(lead_email)
-            if not original_subject:
+            if original_subject:
+                clean = original_subject.replace("Re: ", "").strip().lower()
+                subject_map[lead_email] = clean
+
+        if not subject_map:
+            mail.logout()
+            print(f"[EMAIL] Found 0 replies from leads")
+            return replies
+
+        # Fetch all recent INBOX emails once (avoids IMAP SUBJECT search
+        mail.select("INBOX")
+        status, messages = mail.search(None, f"(SINCE {since_date})")
+
+        if status != "OK" or not messages[0]:
+            mail.logout()
+            print(f"[EMAIL] Found 0 replies from leads")
+            return replies
+
+        for msg_id in messages[0].split():
+            status, msg_data = mail.fetch(msg_id, "(RFC822)")
+            if status != "OK":
                 continue
 
-            # Strip "Re: " prefixes for matching
-            clean_subject = original_subject.replace("Re: ", "").strip()
+            msg = email.message_from_bytes(msg_data[0][1])
 
-            # Search inbox for replies with this subject
-            mail.select("INBOX")
-            search_criteria = f'(SUBJECT "{clean_subject}" SINCE {since_date})'
-            status, messages = mail.search(None, search_criteria)
-
-            if status != "OK" or not messages[0]:
+            # Skip emails we sent ourselves
+            from_header = msg["From"]
+            sender = email.utils.parseaddr(from_header)[1].lower()
+            if sender == SMTP_USER.lower():
                 continue
 
-            for msg_id in messages[0].split():
-                status, msg_data = mail.fetch(msg_id, "(RFC822)")
-                if status != "OK":
-                    continue
+            # Check if this email's subject matches any lead's thread
+            msg_subject = (msg["Subject"] or "").replace("Re: ", "").strip().lower()
+            if not any(clean_subj in msg_subject or msg_subject in clean_subj
+                       for clean_subj in subject_map.values()):
+                continue
 
-                msg = email.message_from_bytes(msg_data[0][1])
+            # Extract body
+            body_text = ""
+            if msg.is_multipart():
+                for part in msg.walk():
+                    if part.get_content_type() == "text/plain":
+                        body_text = part.get_payload(decode=True).decode("utf-8", errors="ignore")
+                        break
+            else:
+                body_text = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
 
-                # Skip emails we sent ourselves
-                from_header = msg["From"]
-                sender = email.utils.parseaddr(from_header)[1].lower()
-                if sender == SMTP_USER.lower():
-                    continue
+            if not body_text.strip():
+                continue
 
-                # Extract body
-                body_text = ""
-                if msg.is_multipart():
-                    for part in msg.walk():
-                        if part.get_content_type() == "text/plain":
-                            body_text = part.get_payload(decode=True).decode("utf-8", errors="ignore")
-                            break
-                else:
-                    body_text = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
+            replies.append({
+                "sender": sender,
+                "subject": msg["Subject"] or "",
+                "body": body_text.strip(),
+            })
 
-                if not body_text.strip():
-                    continue
-
-                replies.append({
-                    "sender": sender,
-                    "subject": msg["Subject"] or "",
-                    "body": body_text.strip(),
-                })
-
-                print(f"[EMAIL] Reply from {sender}: {msg['Subject']}")
+            print(f"[EMAIL] Reply from {sender}: {msg['Subject']}")
 
         mail.logout()
 
@@ -216,6 +226,7 @@ def check_replies(leads: list) -> list:
 
     print(f"[EMAIL] Found {len(replies)} replies from leads")
     return replies
+
 
 
 def analyze_reply(reply_body: str) -> str:
