@@ -185,10 +185,11 @@ def _find_thread(to: str):
                 continue
 
             msg = email.message_from_bytes(msg_data[0][1])
-            to_header = (msg["To"] or "").lower()
 
             # Exact match -- Gmail search ignores +aliases so we must verify
-            if to.lower() in to_header:
+            from email.utils import parseaddr as _parseaddr
+            _, actual_to = _parseaddr(msg["To"] or "")
+            if actual_to.lower() == to.lower():
                 mail.logout()
                 return msg["Message-ID"], msg["Subject"] or ""
 
@@ -248,19 +249,45 @@ def check_replies(leads: list) -> list:
 
         for lead in leads:
             lead_email = lead["email"].strip().lower()
-            
-            # Search specifically for emails FROM this lead
-            status, messages = mail.search(None, f'(FROM "{lead_email}" SINCE {since_date})')
-            
+
+            # Look up the subject of the email we sent to this lead.
+            # Gmail strips +aliases from the From header, so we can't
+            # distinguish leads by sender address alone.  Matching by
+            # thread subject is reliable.
+            sent_msg_id, sent_subject = _find_thread(lead_email)
+
+            if sent_subject:
+                # Strip leading "Re: " to get the base thread subject
+                base_subject = sent_subject
+                while base_subject.lower().startswith("re: "):
+                    base_subject = base_subject[4:]
+                base_subject = base_subject.strip()
+
+                # Search inbox by thread subject
+                status, messages = mail.search(
+                    None, f'(SUBJECT "{base_subject}" SINCE {since_date})'
+                )
+            else:
+                # Fallback: search by FROM (works when leads have unique domains)
+                status, messages = mail.search(
+                    None, f'(FROM "{lead_email}" SINCE {since_date})'
+                )
+
             if status != "OK" or not messages[0]:
                 continue
-                
+
             for msg_id in messages[0].split():
                 status, msg_data = mail.fetch(msg_id, "(RFC822)")
                 if status != "OK":
                     continue
 
                 msg = email.message_from_bytes(msg_data[0][1])
+
+                # Skip emails we sent ourselves
+                from email.utils import parseaddr
+                _, sender_addr = parseaddr(msg.get("From", ""))
+                if sender_addr.lower() == (SMTP_USER or "").lower():
+                    continue
 
                 # Extract body
                 body_text = ""
