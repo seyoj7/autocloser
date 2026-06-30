@@ -76,7 +76,6 @@ def mark_lead_status(path: str, email: str, new_status: str) -> bool:
 
 def add_lead(path: str, company: str, contact: str, email: str,
              website: str, notes: str = "", status: str = "new") -> bool:
-    """Append a new lead row to the CSV. Returns False if email already exists."""
     fieldnames = ["company", "contact", "email", "website", "notes", "status"]
 
     # Check for duplicate email
@@ -110,7 +109,6 @@ def add_lead(path: str, company: str, contact: str, email: str,
 
 
 def update_lead_field(path: str, email: str, field: str, value: str) -> bool:
-    """Update a specific field for a lead identified by email."""
     if not os.path.exists(path):
         print(f"[CSV_READER] File not found: {path}")
         return False
@@ -154,7 +152,6 @@ def update_lead_field(path: str, email: str, field: str, value: str) -> bool:
 
 
 def remove_lead(path: str, email: str) -> bool:
-    """Remove a lead row by email. Returns False if not found."""
     if not os.path.exists(path):
         print(f"[CSV_READER] File not found: {path}")
         return False
@@ -185,7 +182,6 @@ def remove_lead(path: str, email: str) -> bool:
 
 def add_service(path: str, service_id: str, name: str,
                 description: str, amount_cents: int) -> bool:
-    """Append a new service to services.csv. Returns False if ID already exists."""
     fieldnames = ["id", "name", "description", "amount_cents"]
 
     # Check for duplicate ID

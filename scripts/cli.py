@@ -19,7 +19,6 @@ SERVICES_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__f
 # ── Lead Commands ────────────────────────────────────────────
 
 def cmd_list_leads(args):
-    """Show all leads in a formatted table."""
     leads = csv_reader.load_leads(DATA_PATH)
 
     if not leads:
@@ -53,7 +52,6 @@ def cmd_list_leads(args):
 
 
 def cmd_add_lead(args):
-    """Add a new lead to the CSV."""
     success = csv_reader.add_lead(
         DATA_PATH,
         company=args.company,
@@ -71,7 +69,6 @@ def cmd_add_lead(args):
 
 
 def cmd_update_lead(args):
-    """Update a specific field of an existing lead."""
     valid_fields = ["company", "contact", "email", "website", "notes", "status"]
 
     if args.field not in valid_fields:
@@ -98,7 +95,6 @@ def cmd_update_lead(args):
 
 
 def cmd_remove_lead(args):
-    """Remove a lead from the CSV."""
     success = csv_reader.remove_lead(DATA_PATH, args.email)
     if success:
         print(f"\n  ✅ Lead removed: {args.email}\n")
@@ -109,7 +105,6 @@ def cmd_remove_lead(args):
 # ── Service Commands ─────────────────────────────────────────
 
 def cmd_list_services(args):
-    """Show all billable services."""
     services = csv_reader.load_services(SERVICES_PATH)
 
     if not services:
@@ -130,7 +125,6 @@ def cmd_list_services(args):
 
 
 def cmd_add_service(args):
-    """Add a new billable service."""
     success = csv_reader.add_service(
         SERVICES_PATH,
         service_id=args.id,
@@ -147,7 +141,6 @@ def cmd_add_service(args):
 # ── Pipeline Status ──────────────────────────────────────────
 
 def cmd_pipeline_status(args):
-    """Show a visual pipeline funnel with counts per stage."""
     leads = csv_reader.load_leads(DATA_PATH)
 
     if not leads:
@@ -185,13 +178,11 @@ def cmd_pipeline_status(args):
 # ── Settings Commands ────────────────────────────────────────
 
 def cmd_show_settings(args):
-    """Display all current settings."""
     settings.load_settings()
     print(settings.display())
 
 
 def cmd_set(args):
-    """Update a single setting."""
     settings.load_settings()
     success = settings.update(args.key, args.value)
     if success:
@@ -199,7 +190,6 @@ def cmd_set(args):
 
 
 def cmd_reset_settings(args):
-    """Reset all settings to defaults."""
     settings.reset()
     print("\n  ✅ All settings reset to defaults.\n")
 

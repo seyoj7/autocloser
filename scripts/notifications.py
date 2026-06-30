@@ -27,7 +27,6 @@ LOG_FILE = os.path.join(LOG_DIR, "notifications.log")
 
 
 def _settings_enabled() -> bool:
-    """Check if notifications are enabled via settings (graceful fallback)."""
     try:
         from . import settings as _settings
         return _settings.get("notifications_enabled", True)
@@ -36,14 +35,6 @@ def _settings_enabled() -> bool:
 
 
 def notify(lead: dict, new_status: str, detail: str = "") -> None:
-    """
-    Fire a notification for a pipeline status change.
-
-    Args:
-        lead: Dict with at least 'contact', 'company', 'email' keys.
-        new_status: The new pipeline status string.
-        detail: Optional extra info (e.g., invoice URL).
-    """
     if not _settings_enabled():
         return
 
@@ -75,12 +66,6 @@ def notify(lead: dict, new_status: str, detail: str = "") -> None:
 
 
 def notify_summary(leads: list) -> None:
-    """
-    Print a dashboard-style pipeline summary after a cycle.
-
-    Args:
-        leads: List of lead dicts with 'company', 'contact', 'status' keys.
-    """
     if not _settings_enabled():
         return
 
@@ -134,7 +119,6 @@ def notify_summary(leads: list) -> None:
 
 
 def _log_to_file(message: str, email: str, status: str) -> None:
-    """Append a notification entry to the log file."""
     try:
         os.makedirs(LOG_DIR, exist_ok=True)
         with open(LOG_FILE, "a", encoding="utf-8") as f:
