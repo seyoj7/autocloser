@@ -3,7 +3,9 @@ import stripe
 from dotenv import load_dotenv
 from . import email_agent
 
-load_dotenv()
+# Explicit .env path — works regardless of CWD (needed for Hermes)
+_ENV_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+load_dotenv(_ENV_PATH)
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 

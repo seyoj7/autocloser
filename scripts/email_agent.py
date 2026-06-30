@@ -7,7 +7,9 @@ from email.mime.multipart import MIMEMultipart
 from openai import OpenAI
 from dotenv import load_dotenv
 
-load_dotenv()
+# Explicit .env path — works regardless of CWD (needed for Hermes)
+_ENV_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+load_dotenv(_ENV_PATH)
 
 # Nemotron client
 client = OpenAI(
@@ -240,78 +242,52 @@ def send_email(to: str, subject: str, body: str) -> bool:
 
 def check_replies(leads: list) -> list:
     replies = []
-
     print("[EMAIL] Checking inbox for replies...")
 
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(SMTP_USER, SMTP_PASSWORD)
+        mail.select("INBOX")
 
         from datetime import datetime, timedelta
-        since_date = (datetime.now() - timedelta(days=2)).strftime("%d-%b-%Y")
+        since_date = (datetime.now() - timedelta(days=5)).strftime("%d-%b-%Y")
 
-        # Build a map of lead_email -> clean original subject
-        subject_map = {}
         for lead in leads:
             lead_email = lead["email"].strip().lower()
-            original_msg_id, original_subject = _find_thread(lead_email)
-            if original_subject:
-                clean = original_subject.replace("Re: ", "").strip().lower()
-                subject_map[lead_email] = clean
-
-        if not subject_map:
-            mail.logout()
-            print(f"[EMAIL] Found 0 replies from leads")
-            return replies
-
-        # Fetch all recent INBOX emails once (avoids IMAP SUBJECT search
-        mail.select("INBOX")
-        status, messages = mail.search(None, f"(SINCE {since_date})")
-
-        if status != "OK" or not messages[0]:
-            mail.logout()
-            print(f"[EMAIL] Found 0 replies from leads")
-            return replies
-
-        for msg_id in messages[0].split():
-            status, msg_data = mail.fetch(msg_id, "(RFC822)")
-            if status != "OK":
+            
+            # Search specifically for emails FROM this lead
+            status, messages = mail.search(None, f'(FROM "{lead_email}" SINCE {since_date})')
+            
+            if status != "OK" or not messages[0]:
                 continue
+                
+            for msg_id in messages[0].split():
+                status, msg_data = mail.fetch(msg_id, "(RFC822)")
+                if status != "OK":
+                    continue
 
-            msg = email.message_from_bytes(msg_data[0][1])
+                msg = email.message_from_bytes(msg_data[0][1])
 
-            # Skip emails we sent ourselves
-            from_header = msg["From"]
-            sender = email.utils.parseaddr(from_header)[1].lower()
-            if sender == SMTP_USER.lower():
-                continue
+                # Extract body
+                body_text = ""
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        if part.get_content_type() == "text/plain":
+                            body_text = part.get_payload(decode=True).decode("utf-8", errors="ignore")
+                            break
+                else:
+                    body_text = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
 
-            # Check if this email's subject matches any lead's thread
-            msg_subject = (msg["Subject"] or "").replace("Re: ", "").strip().lower()
-            if not any(clean_subj in msg_subject or msg_subject in clean_subj
-                       for clean_subj in subject_map.values()):
-                continue
+                if not body_text.strip():
+                    continue
 
-            # Extract body
-            body_text = ""
-            if msg.is_multipart():
-                for part in msg.walk():
-                    if part.get_content_type() == "text/plain":
-                        body_text = part.get_payload(decode=True).decode("utf-8", errors="ignore")
-                        break
-            else:
-                body_text = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
+                replies.append({
+                    "sender": lead_email,
+                    "subject": msg["Subject"] or "",
+                    "body": body_text.strip(),
+                })
 
-            if not body_text.strip():
-                continue
-
-            replies.append({
-                "sender": sender,
-                "subject": msg["Subject"] or "",
-                "body": body_text.strip(),
-            })
-
-            print(f"[EMAIL] Reply from {sender}: {msg['Subject']}")
+                print(f"[EMAIL] Reply from {lead_email}: {msg['Subject']}")
 
         mail.logout()
 
