@@ -9,7 +9,7 @@ SETTINGS_PATH = os.path.join(
 DEFAULTS = {
     "sender_name": "Alex",
     "company_name": "Autocloser",
-    "calendly_link": "https://calendly.com/yourname/15min",
+    "calendly_link": "",
     "cycle_interval_minutes": 15,
     "pipeline_mode": "ai",
     "email_tone": "conversational",
@@ -21,10 +21,10 @@ DEFAULTS = {
 }
 
 # In-memory cache (loaded once, refreshed on explicit load)
-_cache = None
+_cache: dict[str, object] | None = None
 
 
-def load_settings() -> dict:
+def load_settings() -> dict[str, object]:
     global _cache
 
     settings = dict(DEFAULTS)
@@ -42,7 +42,7 @@ def load_settings() -> dict:
     return settings
 
 
-def save_settings(settings: dict) -> None:
+def save_settings(settings: dict[str, object]) -> None:
     global _cache
 
     os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
@@ -58,7 +58,7 @@ def get(key: str, default=None):
     global _cache
 
     if _cache is None:
-        load_settings()
+        _cache = load_settings()
 
     return _cache.get(key, default if default is not None else DEFAULTS.get(key))
 
@@ -67,7 +67,9 @@ def update(key: str, value) -> bool:
     global _cache
 
     if _cache is None:
-        load_settings()
+        _cache = load_settings()
+
+    current_settings = _cache
 
     if key not in DEFAULTS:
         print(f"[SETTINGS] Unknown setting: '{key}'")
@@ -90,9 +92,9 @@ def update(key: str, value) -> bool:
         print(f"[SETTINGS] Invalid value for '{key}': {e}")
         return False
 
-    old_value = _cache.get(key)
-    _cache[key] = value
-    save_settings(_cache)
+    old_value = current_settings.get(key)
+    current_settings[key] = value
+    save_settings(current_settings)
 
     print(f"[SETTINGS] Updated '{key}': {repr(old_value)} → {repr(value)}")
     return True
@@ -108,15 +110,17 @@ def display() -> str:
     global _cache
 
     if _cache is None:
-        load_settings()
+        _cache = load_settings()
+
+    current_settings = _cache
 
     lines = []
     lines.append("═" * 55)
     lines.append("  ⚙️  AutoCloser Settings")
     lines.append("═" * 55)
 
-    for key in sorted(_cache.keys()):
-        value = _cache[key]
+    for key in sorted(current_settings.keys()):
+        value = current_settings[key]
         default = DEFAULTS.get(key)
         marker = " " if value == default else "✏️"
         lines.append(f"  {marker} {key:30s} = {repr(value)}")
@@ -128,9 +132,3 @@ def display() -> str:
     return "\n".join(lines)
 
 
-# Quick self-test
-if __name__ == "__main__":
-    settings = load_settings()
-    print(display())
-    print(f"sender_name = {get('sender_name')}")
-    print(f"cycle_interval_minutes = {get('cycle_interval_minutes')}")

@@ -13,7 +13,7 @@ client = OpenAI(
     api_key=os.getenv("NVIDIA_API_KEY"),
     base_url=os.getenv("NVIDIA_BASE_URL"),
 )
-MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1"
+MODEL = "nvidia/nemotron-3.5-lightning-30b-a3b"
 
 
 def _human_scroll(page) -> None:
@@ -42,7 +42,7 @@ def _scrape_website(url: str) -> str:
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=False)
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 viewport={"width": 1366, "height": 768},
@@ -96,8 +96,12 @@ def _summarize_with_nemotron(text: str, company: str) -> str:
             temperature=0.3,
             max_tokens=200,
             timeout=30,
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
-        summary = response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
+        if not isinstance(content, str):
+            raise ValueError("Research summary returned no text")
+        summary = content.strip()
         print(f"[RESEARCH] Nemotron summary for {company}: {summary[:80]}...")
         return summary
 
@@ -116,16 +120,5 @@ def research_company(website: str, company: str, notes: str = "") -> str:
         if summary:
             return summary
 
-    if notes:
-        print(f"[RESEARCH] Using notes as fallback for {company}")
-        fallback = f"{company}: {notes}"
-        enriched = _summarize_with_nemotron(notes, company)
-        return enriched if enriched else fallback
-
-    return f"{company}: No research data available."
-
-
-# Quick self-test
-if __name__ == "__main__":
-    result = research_company("notion.so", "Notion", "Productivity and docs platform")
-    print(f"\nFinal result:\n{result}")
+    print(f"[RESEARCH] No verified research summary available for {company}")
+    return ""

@@ -16,7 +16,7 @@ client = OpenAI(
     api_key=os.getenv("NVIDIA_API_KEY"),
     base_url=os.getenv("NVIDIA_BASE_URL"),
 )
-MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1"
+MODEL = "nvidia/nemotron-3.5-lightning-30b-a3b"
 
 # Email config
 SMTP_USER = os.getenv("SMTP_USER")
@@ -29,7 +29,8 @@ IMAP_SERVER = "imap.gmail.com"
 def _get_sender_name() -> str:
     try:
         from . import settings
-        return settings.get("sender_name", os.getenv("SENDER_NAME", "Alex"))
+        value = settings.get("sender_name", os.getenv("SENDER_NAME", "Alex"))
+        return value if isinstance(value, str) else os.getenv("SENDER_NAME", "Alex") or "Alex"
     except Exception:
         return os.getenv("SENDER_NAME", "Alex")
 
@@ -37,7 +38,8 @@ def _get_sender_name() -> str:
 def _get_company_name() -> str:
     try:
         from . import settings
-        return settings.get("company_name", os.getenv("COMPANY_NAME", "Autocloser"))
+        value = settings.get("company_name", os.getenv("COMPANY_NAME", "Autocloser"))
+        return value if isinstance(value, str) else os.getenv("COMPANY_NAME", "Autocloser") or "Autocloser"
     except Exception:
         return os.getenv("COMPANY_NAME", "Autocloser")
 
@@ -45,7 +47,8 @@ def _get_company_name() -> str:
 def _get_email_tone() -> str:
     try:
         from . import settings
-        return settings.get("email_tone", "conversational")
+        value = settings.get("email_tone", "conversational")
+        return value if isinstance(value, str) else "conversational"
     except Exception:
         return "conversational"
 
@@ -53,9 +56,79 @@ def _get_email_tone() -> str:
 def _get_max_words() -> int:
     try:
         from . import settings
-        return settings.get("max_email_words", 100)
+        value = settings.get("max_email_words", 100)
+        return value if isinstance(value, int) else 100
     except Exception:
         return 100
+
+
+def _generate_email(prompt: str, system_prompt: str, label: str) -> dict:
+    try:
+        import json
+        retry_prompt = prompt
+        result = None
+        parse_error = None
+
+        for attempt in range(2):
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": retry_prompt},
+                ],
+                temperature=0.5,
+                max_tokens=500,
+                timeout=30,
+                extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+            )
+            content = response.choices[0].message.content
+            if not isinstance(content, str) or not content.strip():
+                parse_error = ValueError("Email generation returned no text")
+            else:
+                raw = content.strip()
+                if raw.startswith("```"):
+                    raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+                candidates = [raw]
+                decoder = json.JSONDecoder()
+                candidates.extend(
+                    raw[start:]
+                    for start, character in enumerate(raw)
+                    if character == "{"
+                )
+                for candidate in candidates:
+                    try:
+                        parsed, _ = decoder.raw_decode(candidate.lstrip())
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(parsed, dict):
+                        continue
+                    subject, body = parsed.get("subject"), parsed.get("body")
+                    if isinstance(subject, str) and subject.strip() and isinstance(body, str) and body.strip():
+                        result = {"subject": subject.strip(), "body": body.strip()}
+                        break
+
+                if result is None:
+                    parse_error = ValueError("LLM response was not a JSON object with a non-empty subject and body")
+
+            if result is not None:
+                break
+            if attempt == 0:
+                retry_prompt = (
+                    prompt
+                    + "\n\nFormatting correction: return only one valid JSON object with exactly two string keys, "
+                    + '"subject" and "body". Do not include markdown, reasoning, or text outside the object.'
+                )
+
+        if result is None:
+            raise parse_error or ValueError("Email generation failed")
+
+        print(f"[EMAIL] Generated {label}")
+        print(f"  Subject: {result['subject']}")
+        return result
+    except Exception as e:
+        print(f"[EMAIL] Failed to generate {label}: {e}")
+        return {}
 
 
 
@@ -80,38 +153,11 @@ def generate_email(lead: dict, research_summary: str) -> dict:
 
     Return ONLY a JSON object with "subject" and "body" keys. No markdown, no code fences."""
 
-    try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": "You are a B2B sales copywriter. Return only valid JSON."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.7,
-            max_tokens=300,
-            timeout=30,
-        )
-        raw = response.choices[0].message.content.strip()
-
-        # Clean up markdown fences if present
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[1]
-            raw = raw.rsplit("```", 1)[0]
-            raw = raw.strip()
-
-        import json
-        email_dict = json.loads(raw)
-        print(f"[EMAIL] Generated email for {lead['contact']} at {lead['company']}")
-        print(f"  Subject: {email_dict['subject']}")
-        return email_dict
-
-    except Exception as e:
-        print(f"[EMAIL] Failed to generate email: {e}")
-        sender = _get_sender_name()
-        return {
-            "subject": f"Quick question for {lead['contact']}",
-            "body": f"Hi {lead['contact']},\n\nI came across {lead['company']} and would love to chat about how we might help. Do you have 15 minutes this week?\n\nBest,\n{sender}"
-        }
+    return _generate_email(
+        prompt,
+        "You are a B2B sales copywriter. Return only valid JSON.",
+        f"cold email for {lead['contact']} at {lead['company']}",
+    )
 
 
 def generate_followup(lead: dict, reply_body: str) -> dict:
@@ -133,47 +179,47 @@ def generate_followup(lead: dict, reply_body: str) -> dict:
 
     Return ONLY a JSON object with "subject" and "body" keys. No markdown, no code fences."""
 
+    return _generate_email(
+        prompt,
+        "You are a helpful B2B sales consultant. Answer questions directly and concisely. Return only valid JSON.",
+        f"follow-up for {lead['contact']} at {lead['company']}",
+    )
+
+
+def generate_meeting_email(lead: dict, calendly_link: str) -> dict:
+    prompt = f"""Write a concise email to {lead['contact']} at {lead['company']} who expressed interest in a meeting.
+Include this exact booking link: {calendly_link}
+Invite them to choose a convenient time, keep the tone conversational, and sign off as {_get_sender_name()} from {_get_company_name()}.
+Return ONLY a JSON object with non-empty "subject" and "body" strings. No markdown or code fences."""
+    return _generate_email(
+        prompt,
+        "You write helpful, concise B2B emails. Return only valid JSON.",
+        f"meeting email for {lead['contact']} at {lead['company']}",
+    )
+
+
+def generate_invoice_email(lead: dict, invoice_url: str, description: str) -> dict:
+    prompt = f"""Write a concise email to {lead['contact']} at {lead['company']} about the invoice for {description}.
+Include this exact invoice link: {invoice_url}
+Keep the message clear and professional, and sign off as {_get_sender_name()} from {_get_company_name()}.
+Return ONLY a JSON object with non-empty "subject" and "body" strings. No markdown or code fences."""
+    return _generate_email(
+        prompt,
+        "You write clear, professional invoice emails. Return only valid JSON.",
+        f"invoice email for {lead['contact']} at {lead['company']}",
+    )
+
+
+def _find_thread(to: str) -> tuple[str | None, str | None]:
     try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": "You are a helpful B2B sales consultant. Answer questions directly and concisely. Return only valid JSON."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.5,
-            max_tokens=400,
-            timeout=30,
-        )
-        raw = response.choices[0].message.content.strip()
-
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[1]
-            raw = raw.rsplit("```", 1)[0]
-            raw = raw.strip()
-
-        import json
-        email_dict = json.loads(raw)
-        print(f"[EMAIL] Generated followup for {lead['contact']} at {lead['company']}")
-        print(f"  Subject: {email_dict['subject']}")
-        return email_dict
-
-    except Exception as e:
-        print(f"[EMAIL] Failed to generate followup: {e}")
-        sender = _get_sender_name()
-        return {
-            "subject": f"Re: Your question about {_get_company_name()}",
-            "body": f"Hi {lead['contact']},\n\nGreat question! I'd love to walk you through the details on a quick 15-minute call — much easier than going back and forth over email.\n\nWould that work for you?\n\nBest,\n{sender}"
-        }
-
-
-def _find_thread(to: str):
-    try:
+        if not SMTP_USER or not SMTP_PASSWORD:
+            return None, None
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(SMTP_USER, SMTP_PASSWORD)
         mail.select('"[Gmail]/Sent Mail"')
 
         status, messages = mail.search(None, f'(TO "{to}")')
-        if status != "OK" or not messages[0]:
+        if status != "OK" or not messages or not messages[0]:
             mail.logout()
             return None, None
 
@@ -184,7 +230,12 @@ def _find_thread(to: str):
             if status != "OK":
                 continue
 
-            msg = email.message_from_bytes(msg_data[0][1])
+            if not msg_data or not isinstance(msg_data[0], tuple) or len(msg_data[0]) < 2:
+                continue
+            raw_message = msg_data[0][1]
+            if not isinstance(raw_message, bytes):
+                continue
+            msg = email.message_from_bytes(raw_message)
 
             # Exact match -- Gmail search ignores +aliases so we must verify
             from email.utils import parseaddr as _parseaddr
@@ -204,6 +255,8 @@ def send_email(to: str, subject: str, body: str) -> bool:
     print(f"[EMAIL] Sending to {to}...")
 
     try:
+        if not SMTP_USER or not SMTP_PASSWORD:
+            raise ValueError("SMTP_USER and SMTP_PASSWORD must be configured")
         # Check for existing thread to reply in
         thread_msg_id, thread_subject = _find_thread(to)
 
@@ -211,7 +264,7 @@ def send_email(to: str, subject: str, body: str) -> bool:
         msg["From"] = SMTP_USER
         msg["To"] = to
 
-        if thread_msg_id:
+        if thread_msg_id and thread_subject:
             msg["In-Reply-To"] = thread_msg_id
             msg["References"] = thread_msg_id
             clean_subject = thread_subject.replace("Re: ", "")
@@ -235,11 +288,13 @@ def send_email(to: str, subject: str, body: str) -> bool:
         return False
 
 
-def check_replies(leads: list) -> list:
+def check_replies(leads: list[dict[str, str]]) -> list[dict[str, str]]:
     replies = []
     print("[EMAIL] Checking inbox for replies...")
 
     try:
+        if not SMTP_USER or not SMTP_PASSWORD:
+            raise ValueError("SMTP_USER and SMTP_PASSWORD must be configured")
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(SMTP_USER, SMTP_PASSWORD)
         mail.select("INBOX")
@@ -278,7 +333,7 @@ def check_replies(leads: list) -> list:
                 )
 
                 # Fallback: if subject search found nothing, try by References header
-                if (status != "OK" or not messages[0]) and sent_msg_id:
+                if (status != "OK" or not messages or not messages[0]) and sent_msg_id:
                     status, messages = mail.search(
                         None, f'(HEADER References "{sent_msg_id}" SINCE {since_date})'
                     )
@@ -288,7 +343,7 @@ def check_replies(leads: list) -> list:
                     None, f'(FROM "{lead_email}" SINCE {since_date})'
                 )
 
-            if status != "OK" or not messages[0]:
+            if status != "OK" or not messages or not messages[0]:
                 continue
 
             for msg_id in messages[0].split():
@@ -296,7 +351,12 @@ def check_replies(leads: list) -> list:
                 if status != "OK":
                     continue
 
-                msg = email.message_from_bytes(msg_data[0][1])
+                if not msg_data or not isinstance(msg_data[0], tuple) or len(msg_data[0]) < 2:
+                    continue
+                raw_message = msg_data[0][1]
+                if not isinstance(raw_message, bytes):
+                    continue
+                msg = email.message_from_bytes(raw_message)
 
                 # Skip emails we sent ourselves
                 from email.utils import parseaddr
@@ -309,10 +369,14 @@ def check_replies(leads: list) -> list:
                 if msg.is_multipart():
                     for part in msg.walk():
                         if part.get_content_type() == "text/plain":
-                            body_text = part.get_payload(decode=True).decode("utf-8", errors="ignore")
+                            payload = part.get_payload(decode=True)
+                            if isinstance(payload, bytes):
+                                body_text = payload.decode("utf-8", errors="ignore")
                             break
                 else:
-                    body_text = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
+                    payload = msg.get_payload(decode=True)
+                    if isinstance(payload, bytes):
+                        body_text = payload.decode("utf-8", errors="ignore")
 
                 if not body_text.strip():
                     continue
@@ -357,8 +421,12 @@ def analyze_reply(reply_body: str) -> str:
             temperature=0.1,
             max_tokens=10,
             timeout=30,
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
-        result = response.choices[0].message.content.strip().lower()
+        content = response.choices[0].message.content
+        if not isinstance(content, str):
+            raise ValueError("Reply classification returned no text")
+        result = content.strip().lower()
 
         valid = {"interested", "not_interested", "needs_more_info", "unsubscribe"}
         if result not in valid:
@@ -372,12 +440,3 @@ def analyze_reply(reply_body: str) -> str:
         return "needs_more_info"
 
 
-if __name__ == "__main__":
-    test_lead = {
-        "company": "TestCorp",
-        "contact": "Jane",
-        "email": "brocode09x+test1@gmail.com",
-        "website": "example.com",
-    }
-    result = generate_email(test_lead, "TestCorp is a SaaS company helping teams collaborate.")
-    print(f"\nGenerated:\n  Subject: {result['subject']}\n  Body: {result['body']}")

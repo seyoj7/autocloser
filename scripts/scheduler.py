@@ -15,17 +15,19 @@ CALENDLY_API_BASE = "https://api.calendly.com"
 def _get_calendly_link() -> str:
     try:
         from . import settings
-        return settings.get("calendly_link", os.getenv("CALENDLY_LINK", "https://calendly.com/yourname/15min"))
+        value = settings.get("calendly_link", os.getenv("CALENDLY_LINK", ""))
+        return value if isinstance(value, str) else os.getenv("CALENDLY_LINK", "")
     except Exception:
-        return os.getenv("CALENDLY_LINK", "https://calendly.com/yourname/15min")
+        return os.getenv("CALENDLY_LINK", "")
 
 
 def _get_sender_name() -> str:
     try:
         from . import settings
-        return settings.get("sender_name", os.getenv("SENDER_NAME", "Alex"))
+        value = settings.get("sender_name", os.getenv("SENDER_NAME", "Alex"))
+        return value if isinstance(value, str) else os.getenv("SENDER_NAME") or "Alex"
     except Exception:
-        return os.getenv("SENDER_NAME", "Alex")
+        return os.getenv("SENDER_NAME") or "Alex"
 
 
 def _calendly_headers():
@@ -97,35 +99,22 @@ def qualify_lead(lead: dict, reply_analysis: str) -> bool:
 
 
 def schedule_meeting(lead: dict) -> str:
-    sender = _get_sender_name()
     calendly = _get_calendly_link()
+    if not calendly:
+        print("[SCHEDULER] Calendly link is not configured; skipping meeting email")
+        return ""
 
-    message = (
-        f"Hi {lead['contact']},\n\n"
-        f"Thanks for your interest! I'd love to set up a quick 15-minute call.\n\n"
-        f"Pick a time that works for you: {calendly}\n\n"
-        f"Looking forward to it!\n"
-        f"{sender}"
-    )
+    generated = email_agent.generate_meeting_email(lead, calendly)
+    if not generated:
+        return ""
 
-    subject = "Let's connect -- 15 min call"
-
-    sent = email_agent.send_email(lead["email"], subject, message)
+    sent = email_agent.send_email(lead["email"], generated["subject"], generated["body"])
 
     if sent:
         print(f"[SCHEDULER] Meeting link sent -> {lead['email']}")
         return f"Meeting link sent to {lead['contact']} at {lead['email']}"
     else:
         print(f"[SCHEDULER] Failed to send meeting link to {lead['email']}")
-        return f"Failed to send meeting link to {lead['contact']}"
+        return ""
 
 
-# Quick self-test
-if __name__ == "__main__":
-    test_lead = {
-        "company": "TestCorp",
-        "contact": "Jane",
-        "email": "brocode09x+test1@gmail.com",
-    }
-    print(qualify_lead(test_lead, "interested"))
-    print(qualify_lead(test_lead, "not_interested"))

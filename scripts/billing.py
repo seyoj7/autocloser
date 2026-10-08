@@ -10,10 +10,6 @@ load_dotenv(_ENV_PATH)
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
 
-SENDER_NAME = os.getenv("SENDER_NAME", "Alex")
-COMPANY_NAME = os.getenv("COMPANY_NAME", "Autocloser")
-
-
 def create_invoice(lead: dict, amount: int, description: str) -> str:
     print(f"[BILLING] Creating invoice for {lead['contact']} at {lead['company']}...")
     print(f"  Amount: ${amount / 100:.2f} | {description}")
@@ -48,20 +44,23 @@ def create_invoice(lead: dict, amount: int, description: str) -> str:
             customer=customer.id,
             collection_method="send_invoice",
             days_until_due=7,
+            auto_advance=False,
         )
         invoice = stripe.Invoice.finalize_invoice(invoice.id)
 
         invoice_url = invoice.hosted_invoice_url
+        if invoice_url is None:
+            raise ValueError("Stripe finalized the invoice without a hosted URL")
         print(f"[BILLING] Invoice created: {invoice_url}")
 
-        # Email the invoice link to the lead
-        body = (
-            f"Hi {lead['contact']},\n\n"
-            f"Thanks for booking a call! Here's your invoice:\n\n"
-            f"{invoice_url}\n\n"
-            f"Best,\n{SENDER_NAME}"
-        )
-        email_agent.send_email(lead["email"], f"Invoice from {COMPANY_NAME} - {description}", body)
+        email_content = email_agent.generate_invoice_email(lead, invoice_url, description)
+        if not email_content:
+            print("[BILLING] LLM invoice email generation failed; skipping email")
+            return ""
+
+        if not email_agent.send_email(lead["email"], email_content["subject"], email_content["body"]):
+            print("[BILLING] Invoice email send failed")
+            return ""
 
         return invoice_url
 
@@ -92,6 +91,9 @@ def check_payment_status(lead_email: str) -> str:
 
         latest = invoices.data[0]
         status = latest.status  # paid, open, void, draft, uncollectible
+        if status is None:
+            print(f"[BILLING] Invoice status is unavailable for {lead_email}")
+            return "unknown"
         print(f"[BILLING] Invoice status for {lead_email}: {status}")
         return status
 
@@ -100,12 +102,3 @@ def check_payment_status(lead_email: str) -> str:
         return "unknown"
 
 
-# Quick self-test
-if __name__ == "__main__":
-    test_lead = {
-        "company": "TestCorp",
-        "contact": "Jane",
-        "email": "brocode09x+test1@gmail.com",
-    }
-    status = check_payment_status(test_lead["email"])
-    print(f"Payment status: {status}")

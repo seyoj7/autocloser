@@ -47,6 +47,9 @@ def mark_lead_status(path: str, email: str, new_status: str) -> bool:
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames
+        if fieldnames is None:
+            print(f"[CSV_READER] Missing header row: {path}")
+            return False
         for row in reader:
             if row["email"].strip() == email:
                 row["status"] = new_status
@@ -119,6 +122,9 @@ def update_lead_field(path: str, email: str, field: str, value: str) -> bool:
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames
+        if fieldnames is None:
+            print(f"[CSV_READER] Missing header row: {path}")
+            return False
         for row in reader:
             if row["email"].strip() == email:
                 if field in row:
@@ -162,6 +168,9 @@ def remove_lead(path: str, email: str) -> bool:
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames
+        if fieldnames is None:
+            print(f"[CSV_READER] Missing header row: {path}")
+            return False
         for row in reader:
             if row["email"].strip() == email:
                 removed = True
@@ -211,9 +220,3 @@ def add_service(path: str, service_id: str, name: str,
     return True
 
 
-# Quick self-test
-if __name__ == "__main__":
-    test_path = os.path.join(os.path.dirname(__file__), "..", "data", "leads.csv")
-    leads = load_leads(test_path)
-    for lead in leads:
-        print(f"  {lead['company']:12s} | {lead['contact']:8s} | {lead['status']}")

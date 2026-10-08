@@ -72,9 +72,17 @@ def main():
                 company=lead["company"],
                 notes=lead.get("notes", ""),
             )
+            if not summary or not summary.strip():
+                print(f"[MAIN] Research unavailable for {lead['company']}; skipping email and leaving status as new")
+                continue
+
             print(f"[MAIN] Research: {summary[:100]}...")
 
             email_dict = email_agent.generate_email(lead, summary)
+            if not email_dict.get("subject", "").strip() or not email_dict.get("body", "").strip():
+                print(f"[MAIN] Email generation failed for {lead['company']}; skipping send and leaving status as new")
+                continue
+
             print(f"[MAIN] Subject: {email_dict['subject']}")
 
             sent = email_agent.send_email(lead["email"], email_dict["subject"], email_dict["body"])
@@ -95,13 +103,14 @@ def main():
 
                     if analysis == "interested":
                         result = scheduler.schedule_meeting(lead)
-                        csv_reader.mark_lead_status(DATA_PATH, lead["email"], "meeting_sent")
-                        print(f"[MAIN] {result}")
+                        if result:
+                            csv_reader.mark_lead_status(DATA_PATH, lead["email"], "meeting_sent")
+                            print(f"[MAIN] {result}")
                     elif analysis == "needs_more_info":
                         followup = email_agent.generate_followup(lead, reply["body"])
-                        email_agent.send_email(lead["email"], followup["subject"], followup["body"])
-                        csv_reader.mark_lead_status(DATA_PATH, lead["email"], "followup_sent")
-                        print(f"[MAIN] Answered {lead['contact']}'s question, waiting for response")
+                        if followup and email_agent.send_email(lead["email"], followup["subject"], followup["body"]):
+                            csv_reader.mark_lead_status(DATA_PATH, lead["email"], "followup_sent")
+                            print(f"[MAIN] Answered {lead['contact']}'s question, waiting for response")
                     else:
                         csv_reader.mark_lead_status(DATA_PATH, lead["email"], "not_interested")
                         print(f"[MAIN] {lead['company']} marked as not interested")
@@ -121,8 +130,9 @@ def main():
 
                     if scheduler.qualify_lead(lead, analysis):
                         result = scheduler.schedule_meeting(lead)
-                        csv_reader.mark_lead_status(DATA_PATH, lead["email"], "meeting_sent")
-                        print(f"[MAIN] {result}")
+                        if result:
+                            csv_reader.mark_lead_status(DATA_PATH, lead["email"], "meeting_sent")
+                            print(f"[MAIN] {result}")
                     else:
                         csv_reader.mark_lead_status(DATA_PATH, lead["email"], "not_interested")
                         print(f"[MAIN] {lead['company']} marked as not interested")
@@ -133,14 +143,11 @@ def main():
         elif lead["status"] == "meeting_sent":
             print(f"\n--- Meeting Booking Check ({lead['company']}) ---")
 
-            replies = email_agent.check_replies([lead])
-
-            if replies:
-                print(f"[MAIN] {lead['contact']} responded to meeting link")
+            if scheduler.check_meeting_completed(lead["email"]):
                 csv_reader.mark_lead_status(DATA_PATH, lead["email"], "meeting_booked")
                 print(f"[MAIN] {lead['company']} marked as meeting_booked")
             else:
-                print(f"[MAIN] No response yet to meeting link from {lead['company']}")
+                print(f"[MAIN] No confirmed Calendly booking for {lead['company']}")
 
         # meeting_booked -> ask user if meeting is done, then optionally invoice
         elif lead["status"] == "meeting_booked":
@@ -204,8 +211,9 @@ def main():
 
                     if scheduler.qualify_lead(lead, analysis):
                         result = scheduler.schedule_meeting(lead)
-                        csv_reader.mark_lead_status(DATA_PATH, lead["email"], "meeting_sent")
-                        print(f"[MAIN] {lead['company']} changed their mind! {result}")
+                        if result:
+                            csv_reader.mark_lead_status(DATA_PATH, lead["email"], "meeting_sent")
+                            print(f"[MAIN] {lead['company']} changed their mind! {result}")
                     else:
                         print(f"[MAIN] {lead['company']} still not interested")
             else:

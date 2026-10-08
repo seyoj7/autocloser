@@ -4,11 +4,10 @@ from datetime import datetime
 
 # Force UTF-8 output on Windows
 if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="replace")
 
 # ── Notification templates ───────────────────────────────────
 STATUS_MESSAGES = {
@@ -29,7 +28,8 @@ LOG_FILE = os.path.join(LOG_DIR, "notifications.log")
 def _settings_enabled() -> bool:
     try:
         from . import settings as _settings
-        return _settings.get("notifications_enabled", True)
+        value = _settings.get("notifications_enabled", True)
+        return value if isinstance(value, bool) else True
     except Exception:
         return True
 
@@ -127,20 +127,3 @@ def _log_to_file(message: str, email: str, status: str) -> None:
         pass  # Don't let logging failures break the pipeline
 
 
-# Quick self-test
-if __name__ == "__main__":
-    test_lead = {
-        "company": "TestCorp",
-        "contact": "Jane",
-        "email": "jane@testcorp.com",
-    }
-    notify(test_lead, "emailed")
-    notify(test_lead, "meeting_booked")
-    notify(test_lead, "closed_won", detail="$150.00")
-
-    test_leads = [
-        {"company": "Notion", "contact": "John", "status": "emailed"},
-        {"company": "Linear", "contact": "Sara", "status": "meeting_sent"},
-        {"company": "Vercel", "contact": "Mike", "status": "closed_won"},
-    ]
-    notify_summary(test_leads)

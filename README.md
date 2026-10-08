@@ -35,7 +35,7 @@ AutoCloser is a fully autonomous sales agent that runs as a [Hermes Agent](https
 | Layer | Tool |
 |---|---|
 | Agent Orchestration | Hermes (tool-calling loop) |
-| LLM | NVIDIA Nemotron 3 Ultra (`nvidia/llama-3.3-nemotron-super-49b-v1`) via OpenAI-compatible API |
+| LLM | NVIDIA Nemotron 3.5 Lightning (`nvidia/nemotron-3.5-lightning-30b-a3b`) via OpenAI-compatible API |
 | Web Scraping | Playwright Chromium (headless, with human-like scrolling) |
 | Email (Outbound) | Gmail SMTP (TLS on port 587) |
 | Email (Inbound) | Gmail IMAP (SSL) |
@@ -52,7 +52,7 @@ AutoCloser is a fully autonomous sales agent that runs as a [Hermes Agent](https
 - **Python 3.10+**
 - **Gmail account** with [App Password](https://myaccount.google.com/apppasswords) (requires 2FA enabled)
 - **[NVIDIA NIM API key](https://build.nvidia.com/)** for Nemotron
-- **[Stripe API key](https://dashboard.stripe.com/apikeys)** (use `sk_test_...` for demo)
+- **[Stripe API key](https://dashboard.stripe.com/apikeys)** (use `sk_test_...` for testing)
 - **[Calendly](https://calendly.com/)** booking link + API key
 
 ### Installation
@@ -73,7 +73,7 @@ AutoCloser is a fully autonomous sales agent that runs as a [Hermes Agent](https
    NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
    SMTP_USER=you@gmail.com
    SMTP_PASSWORD=xxxx xxxx xxxx xxxx
-   CALENDLY_LINK=https://calendly.com/yourname/15min
+   CALENDLY_LINK=
    CALENDLY_API_KEY=eyJ...
    STRIPE_SECRET_KEY=sk_test_...
    ```
@@ -93,20 +93,13 @@ AutoCloser is a fully autonomous sales agent that runs as a [Hermes Agent](https
    python -m playwright install chromium
    ```
 
-4. **Seed your leads:**
+4. **Create your data files:**
 
-   Copy the example data to get started:
-   ```bash
-   cp data/example/leads.csv data/leads.csv
-   cp data/example/services.csv data/services.csv
-   cp data/example/settings.json data/settings.json
-   ```
-   Then edit `data/leads.csv` with your actual prospects:
+   Create `data/leads.csv` with your actual prospects. Start with this header, then add one row per lead:
    ```csv
    company,contact,email,website,notes,status
-   Notion,Jane,jane@notion.so,notion.so,Productivity and docs platform,new
-   Linear,Tom,tom@linear.app,linear.app,Issue tracking for dev teams,new
    ```
+   Create `data/services.csv` with the header `id,name,description,amount_cents` and your billable services. `data/settings.json` is optional; built-in defaults apply until you configure it.
 
 5. **Run the pipeline:**
    ```bash
@@ -150,11 +143,6 @@ AutoCloser/
 │   ├── services.csv      # Billable services catalog (gitignored)
 │   ├── settings.json     # User configuration (gitignored)
 │   ├── notifications.log # Event log (gitignored)
-│   └── example/          # Example seed data (committed)
-│       ├── leads.csv
-│       ├── services.csv
-│       └── settings.json
-│
 └── .agents/
     └── skills/
         └── autocloser/   # Hermes Agent skill definition
@@ -209,20 +197,20 @@ python scripts/cli.py list-leads
 
 # Add a new lead
 python scripts/cli.py add-lead \
-  --company "Notion" \
-  --contact "Jane" \
-  --email "jane@notion.so" \
-  --website "notion.so" \
-  --notes "Productivity platform"
+  --company "<your company>" \
+  --contact "<contact name>" \
+  --email "<contact email>" \
+  --website "<company website>" \
+  --notes "<relevant notes>"
 
 # Update a lead's field
 python scripts/cli.py update-lead \
-  --email "jane@notion.so" \
+  --email "<contact email>" \
   --field status \
   --value new
 
 # Remove a lead
-python scripts/cli.py remove-lead --email "jane@notion.so"
+python scripts/cli.py remove-lead --email "<contact email>"
 ```
 
 **Valid status values:** `new`, `emailed`, `followup_sent`, `meeting_sent`, `meeting_booked`, `meeting_completed`, `invoiced`, `closed_won`, `not_interested`
@@ -287,7 +275,7 @@ Settings are stored in `data/settings.json` and can be changed at runtime via th
 |---|---|---|---|
 | `sender_name` | string | `"Alex"` | Name used to sign off emails |
 | `company_name` | string | `"Autocloser"` | Your company name in email signatures |
-| `calendly_link` | string | `"https://calendly.com/yourname/15min"` | Calendly booking URL sent to qualified leads |
+| `calendly_link` | string | `""` | Calendly booking URL sent to qualified leads |
 | `cycle_interval_minutes` | int | `15` | Minutes between pipeline cycles in loop mode |
 | `pipeline_mode` | string | `"ai"` | Pipeline mode (`ai` for Nemotron-powered) |
 | `email_tone` | string | `"conversational"` | Tone for generated emails (e.g., `conversational`, `professional`, `casual`) |
@@ -333,8 +321,7 @@ Runtime configuration. See the [Settings Reference](#settings-reference) above.
 
 Append-only log of all pipeline events. Each line records a timestamped status change:
 ```
-[2026-07-01 14:30:00] 📧 Cold email sent to Jane at Notion | jane@notion.so | emailed
-[2026-07-01 15:15:00] 📅 Meeting link sent to Jane at Notion | jane@notion.so | meeting_sent
+Each status change is appended with a timestamp, lead, email address, and new status.
 ```
 
 ---
@@ -445,23 +432,13 @@ AutoCloser is natively designed to run as a Hermes Agent skill under `.agents/sk
 | `NVIDIA_BASE_URL` | ✅ | API endpoint (e.g., `https://integrate.api.nvidia.com/v1`) |
 | `SMTP_USER` | ✅ | Gmail address for sending and receiving email |
 | `SMTP_PASSWORD` | ✅ | Gmail App Password (16-character, spaces included) |
-| `STRIPE_SECRET_KEY` | ⬚ | Stripe secret key (`sk_test_...` for demo, `sk_live_...` for production) |
+| `STRIPE_SECRET_KEY` | ⬚ | Stripe secret key (`sk_test_...` for testing, `sk_live_...` for production) |
 | `CALENDLY_LINK` | ⬚ | Your Calendly booking URL |
 | `CALENDLY_API_KEY` | ⬚ | Calendly API key (for meeting completion checks) |
 | `SENDER_NAME` | ⬚ | Fallback sender name if `settings.json` is unavailable |
 | `COMPANY_NAME` | ⬚ | Fallback company name if `settings.json` is unavailable |
 
 > ✅ = Required for core functionality. ⬚ = Optional / required only for specific features.
-
----
-
-## Demo Tips
-
-- Seed `data/leads.csv` with 3–5 leads using Gmail `+alias` addresses (e.g., `you+test1@gmail.com`, `you+test2@gmail.com`) so you can reply to yourself and watch the pipeline advance.
-- Use **Stripe test mode** (`sk_test_...`) — invoices are created in the Stripe dashboard without real charges.
-- Run with `--single-cycle --no-input` for a quick end-to-end demo (~30–60 seconds per lead).
-- Check `data/notifications.log` for a complete audit trail of every pipeline event.
-- Use `python scripts/cli.py pipeline-status` to see a visual funnel at any time.
 
 ---
 
