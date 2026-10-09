@@ -15,7 +15,6 @@ client = OpenAI(
 )
 MODEL = "nvidia/nemotron-3.5-lightning-30b-a3b"
 
-
 def _human_scroll(page) -> None:
     import time as _time
     _time.sleep(random.uniform(1.0, 2.5))
